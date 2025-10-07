@@ -59,5 +59,23 @@ temp/
 logs/
 
 # Output directories
-output/
+output/*
+!output/.gitkeep
 results/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build artifacts
+*.pyc
+*.pyo
+*.so
+*.dll
+*.dylib
+
+# Environment
+.env
+.env.local
+.env.*.local
