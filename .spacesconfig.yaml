@@ -1,0 +1,22 @@
+# Hugging Face Spaces Configuration
+
+# Python version
+python_version: "3.10"
+
+# Gradio version
+sdk: gradio
+sdk_version: 4.16.0
+
+# App settings
+app_file: app.py
+
+# Hardware (can be changed in Space settings)
+# Options: cpu-basic, cpu-upgrade, t4-small, t4-medium, a10g-small, a10g-large
+suggested_hardware: cpu-basic
+
+# Storage (if needed for model caching)
+suggested_storage: small
+
+# Environment variables (optional)
+env:
+  GRADIO_ANALYTICS_ENABLED: "False"
