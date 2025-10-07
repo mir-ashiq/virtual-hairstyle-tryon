@@ -4,9 +4,13 @@ Gallery service for managing hairstyle samples and collections.
 
 import json
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from PIL import Image
 import logging
+import io
+import hashlib
+import time
+import requests
 
 from ..config import get_settings
 
@@ -197,3 +201,147 @@ class HairstyleGalleryService:
             stats[f'category_{category}'] = count
         
         return stats
+
+    # ---------------------------------------------------------------------
+    # Remote / Internet Asset Support
+    # ---------------------------------------------------------------------
+    def _safe_filename(self, base: str) -> str:
+        """Generate a filesystem-safe filename."""
+        keep = [c if c.isalnum() or c in ('-', '_') else '-' for c in base.lower()]
+        name = ''.join(keep).strip('-_')
+        return name or f"asset-{int(time.time())}"
+
+    def download_image_from_url(
+        self,
+        url: str,
+        category: str = "misc",
+        name: Optional[str] = None,
+        max_bytes: int = 8 * 1024 * 1024,
+        timeout: int = 15,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Tuple[bool, str, Optional[Path]]:
+        """Download an image from a URL and add it to the gallery.
+
+        Args:
+            url: Direct URL to the image (http/https)
+            category: Target category to store image under
+            name: Optional desired base filename (without extension)
+            max_bytes: Maximum allowed download size
+            timeout: Network timeout in seconds
+            metadata: Optional metadata to persist alongside image
+
+        Returns:
+            (success, message, path_or_none)
+        """
+        try:
+            if not url.lower().startswith(("http://", "https://")):
+                return False, "URL must start with http:// or https://", None
+
+            resp = requests.get(url, timeout=timeout, stream=True)
+            if resp.status_code != 200:
+                return False, f"HTTP {resp.status_code} while fetching image", None
+
+            # Enforce size limit while streaming
+            content = io.BytesIO()
+            total = 0
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    total += len(chunk)
+                    if total > max_bytes:
+                        return False, "Image exceeds maximum allowed size", None
+                    content.write(chunk)
+
+            content.seek(0)
+
+            # Validate as image
+            try:
+                pil_img = Image.open(content)
+                pil_img.verify()  # quick integrity check
+                content.seek(0)
+                pil_img = Image.open(content).convert("RGB")
+            except Exception:
+                return False, "Downloaded file is not a valid image", None
+
+            # Derive name if not provided
+            if not name:
+                # use sha1 of content for uniqueness
+                sha1 = hashlib.sha1(content.getvalue()).hexdigest()[:10]
+                # try to infer basename from URL path
+                url_stem = Path(url.split('?')[0]).stem or 'image'
+                name = self._safe_filename(f"{url_stem}-{sha1}")
+            else:
+                name = self._safe_filename(name)
+
+            category_path = self.hairstyles_dir / category
+            category_path.mkdir(parents=True, exist_ok=True)
+            image_path = category_path / f"{name}.png"
+            pil_img.save(image_path, format="PNG")
+
+            # Write metadata
+            meta: Dict[str, Any] = metadata.copy() if metadata else {}
+            meta.update({
+                "source_url": url,
+                "original_format": pil_img.format,
+                "width": pil_img.width,
+                "height": pil_img.height,
+                "added_utc": int(time.time())
+            })
+            with open(category_path / f"{name}.json", 'w', encoding='utf-8') as f:
+                json.dump(meta, f, indent=2)
+
+            self.logger.info(f"Downloaded remote hairstyle '{name}' into category '{category}'")
+            return True, f"Added '{name}' to category '{category}'", image_path
+
+        except requests.Timeout:
+            return False, "Download timed out", None
+        except Exception as e:
+            self.logger.error(f"Failed downloading image: {e}")
+            return False, f"Error: {e}", None
+
+    def import_manifest(self, manifest_url: str, default_category: str = "misc") -> Tuple[int, int, List[str]]:
+        """Import multiple assets from a remote JSON manifest.
+
+        Manifest schema (example):
+        {
+          "items": [
+            {"url": "https://.../hair1.jpg", "category": "long", "name": "wavy_long_1", "metadata": {"license": "CC-BY"}},
+            {"url": "https://.../hair2.png"}
+          ]
+        }
+
+        Args:
+            manifest_url: URL to JSON manifest
+            default_category: Category to use when item has none
+
+        Returns:
+            (success_count, total, messages)
+        """
+        try:
+            r = requests.get(manifest_url, timeout=15)
+            if r.status_code != 200:
+                return 0, 0, [f"HTTP {r.status_code} fetching manifest"]
+            data = r.json()
+            items = data.get("items", [])
+            if not isinstance(items, list):
+                return 0, 0, ["Manifest 'items' must be a list"]
+            success = 0
+            messages: List[str] = []
+            for entry in items:
+                if not isinstance(entry, dict):
+                    messages.append("Skipped non-dict entry")
+                    continue
+                url = entry.get("url")
+                if not url:
+                    messages.append("Skipped entry without url")
+                    continue
+                category = entry.get("category") or default_category
+                name = entry.get("name")
+                meta = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else None
+                ok, msg, _ = self.download_image_from_url(url, category=category, name=name, metadata=meta)
+                if ok:
+                    success += 1
+                messages.append(msg)
+            return success, len(items), messages
+        except Exception as e:
+            return 0, 0, [f"Manifest import failed: {e}"]
+

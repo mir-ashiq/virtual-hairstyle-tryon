@@ -16,7 +16,17 @@ OUTPUT_DIR = os.path.join(BARBERSHOP_PATH, "output")
 
 def setup_barbershop():
     """Clone and setup Barbershop repository"""
-    if not os.path.exists(BARBERSHOP_PATH):
+    # Check if key files exist instead of just directory
+    align_face_script = os.path.join(BARBERSHOP_PATH, "align_face.py")
+    main_script = os.path.join(BARBERSHOP_PATH, "main.py")
+    
+    if not os.path.exists(align_face_script) or not os.path.exists(main_script):
+        print("Setting up Barbershop repository...")
+        
+        # Remove existing directory if it's incomplete
+        if os.path.exists(BARBERSHOP_PATH):
+            shutil.rmtree(BARBERSHOP_PATH)
+        
         print("Cloning Barbershop repository...")
         subprocess.run(["git", "clone", "https://github.com/ZPdesu/Barbershop.git"], check=True)
         
@@ -27,6 +37,8 @@ def setup_barbershop():
         default_img = os.path.join(UNPROCESSED_DIR, "90.jpg")
         if os.path.exists(default_img):
             os.remove(default_img)
+    
+    print("✅ Barbershop setup complete")
     
     # Ensure directories exist
     os.makedirs(UNPROCESSED_DIR, exist_ok=True)
@@ -346,7 +358,7 @@ with gr.Blocks(
             if os.path.exists(example_dir):
                 gr.Examples(
                     examples=[
-                        [os.path.join(example_dir, "face1.png"), os.path.join(example_dir, "hair1.png")],
+                        [os.path.join(example_dir, "example_face.png"), os.path.join(example_dir, "example_hair.png")],
                     ],
                     inputs=[face_input, hair_input],
                 )
@@ -372,7 +384,7 @@ if __name__ == "__main__":
     
     demo.launch(
         share=False,
-        server_name="0.0.0.0",
+        server_name="127.0.0.1",
         server_port=7860,
         show_error=True
     )

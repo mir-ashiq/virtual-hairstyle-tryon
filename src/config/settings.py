@@ -38,7 +38,7 @@ class Settings:
     ALIGNMENT_SEED: int = 42
     
     # Server settings
-    SERVER_HOST: str = os.getenv("GRADIO_SERVER_NAME", "0.0.0.0")
+    SERVER_HOST: str = os.getenv("GRADIO_SERVER_NAME", "127.0.0.1")
     SERVER_PORT: int = int(os.getenv("GRADIO_SERVER_PORT", "7860"))
     GRADIO_ANALYTICS: bool = os.getenv("GRADIO_ANALYTICS_ENABLED", "False").lower() == "true"
     

@@ -293,14 +293,18 @@ with gr.Blocks(
             )
             
             # Add examples if available
-            example_pairs = gallery_service.get_example_pairs()
-            if example_pairs:
-                gr.Markdown("### 🎯 Quick Start Examples")
-                gr.Examples(
-                    examples=example_pairs,
-                    inputs=[face_input, hair_input],
-                    label="Click an example to load it"
-                )
+            example_dir = Path("./examples")
+            if example_dir.exists():
+                face_example = example_dir / "example_face.png"
+                hair_example = example_dir / "example_hair.png"
+                
+                if face_example.exists() and hair_example.exists():
+                    gr.Markdown("### 🎯 Quick Start Examples")
+                    gr.Examples(
+                        examples=[[str(face_example), str(hair_example)]],
+                        inputs=[face_input, hair_input],
+                        label="Click the example to load it"
+                    )
         
         # Gallery Tab
         with gr.TabItem("🎨 Hairstyle Gallery", id=1):
@@ -349,9 +353,77 @@ with gr.Blocks(
                 )
             else:
                 gr.Markdown("No hairstyle categories found. Add samples to the `hairstyles/` directory.")
+
+        # Remote Import Tab
+        with gr.TabItem("🌐 Import Online", id=2):
+            gr.Markdown(
+                """
+                ### 🌐 Import Hairstyles from the Internet
+                Add new hairstyle reference images directly by URL or via a JSON manifest.
+                
+                - Direct image download (PNG/JPG)
+                - Bulk import with JSON manifest
+                - Automatic metadata capture (source, size, dimensions)
+                - Stored under `hairstyles/<category>/`
+                
+                **Manifest Example:**
+                ```json
+                {
+                  "items": [
+                    {"url": "https://example.com/hair1.jpg", "category": "long", "name": "wavy_long_1"},
+                    {"url": "https://example.com/hair2.png", "category": "short"}
+                  ]
+                }
+                ```
+                """
+            )
+
+            with gr.Row():
+                with gr.Column():
+                    url_input = gr.Textbox(label="Image URL", placeholder="https://.../image.jpg")
+                    url_category = gr.Textbox(label="Category", value="misc")
+                    url_name = gr.Textbox(label="Optional Name", placeholder="custom-name (no extension)")
+                    download_button = gr.Button("Download Image", variant="primary")
+                    url_result = gr.Markdown()
+                with gr.Column():
+                    manifest_url = gr.Textbox(label="Manifest URL", placeholder="https://.../manifest.json")
+                    manifest_default_cat = gr.Textbox(label="Default Category", value="misc")
+                    manifest_button = gr.Button("Import Manifest", variant="secondary")
+                    manifest_result = gr.Markdown()
+
+            def handle_download(u, c, n):
+                if not u:
+                    return "⚠️ Please provide an image URL." , get_gallery_stats_text()
+                ok, msg, path = gallery_service.download_image_from_url(u, category=c or "misc", name=n or None)
+                stats = get_gallery_stats_text()
+                if ok:
+                    return f"✅ {msg}\n\nSaved: `{path}`", stats
+                return f"❌ {msg}", stats
+
+            def handle_manifest(mu, dc):
+                if not mu:
+                    return "⚠️ Provide a manifest URL.", get_gallery_stats_text()
+                success, total, messages = gallery_service.import_manifest(mu, default_category=dc or "misc")
+                report = f"Imported {success}/{total} items.\n\n" + "\n".join(f"- {m}" for m in messages[:25])
+                if len(messages) > 25:
+                    report += f"\n... and {len(messages)-25} more"
+                stats = get_gallery_stats_text()
+                return report, stats
+
+            download_button.click(
+                fn=handle_download,
+                inputs=[url_input, url_category, url_name],
+                outputs=[url_result, stats_box]
+            )
+
+            manifest_button.click(
+                fn=handle_manifest,
+                inputs=[manifest_url, manifest_default_cat],
+                outputs=[manifest_result, stats_box]
+            )
         
         # Model Info Tab
-        with gr.TabItem("🤖 Model Information", id=2):
+        with gr.TabItem("🤖 Model Information", id=3):
             gr.Markdown(
                 """
                 <div class="section-header">
@@ -639,9 +711,9 @@ if __name__ == "__main__":
     try:
         logger.info("Initializing hairstyle transfer service...")
         transfer_service.initialize()
-        logger.info("✅ Service initialization complete")
+        logger.info("Service initialization complete")
     except Exception as e:
-        logger.warning(f"⚠️ Service will initialize on first use: {e}")
+        logger.warning(f"Service will initialize on first use: {e}")
     
     # Launch the application
     demo.launch(

@@ -36,7 +36,18 @@ class BarbershopModel(BaseModel):
             True if setup successful, False otherwise
         """
         try:
-            if not self.barbershop_path.exists():
+            # Check if key files exist instead of just directory
+            align_face_script = self.barbershop_path / "align_face.py"
+            main_script = self.barbershop_path / "main.py"
+            
+            if not align_face_script.exists() or not main_script.exists():
+                logger.info("Setting up Barbershop repository...")
+                
+                # Remove existing directory if it's incomplete
+                if self.barbershop_path.exists():
+                    import shutil
+                    shutil.rmtree(self.barbershop_path)
+                
                 logger.info("Cloning Barbershop repository...")
                 subprocess.run(
                     ["git", "clone", self.settings.MODEL_REPO_URL, str(self.barbershop_path)],
